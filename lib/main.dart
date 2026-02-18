@@ -69,7 +69,6 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
       body: Center(
         child: Padding(
-          // ВИПРАВЛЕННЯ 5: Замінили 20.0 на 20
           padding: const EdgeInsets.all(20),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
