@@ -42,6 +42,8 @@ class _MainScreenState extends State<MainScreen> {
         address: _currentUser!.address,
         password: _currentUser!.password,
         meters: newMeters,
+
+        avatarPath: _currentUser!.avatarPath,
       );
 
       await authRepository.updateUser(updatedUser);
@@ -112,7 +114,7 @@ class _MainScreenState extends State<MainScreen> {
           )
         ],
       ),
-      body: _isLoading
+      body: _isLoading || _currentUser == null
           ? const Center(child: CircularProgressIndicator(color: Colors.teal))
           : Padding(
         padding: const EdgeInsets.all(16.0),

@@ -85,6 +85,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     password: _currentUser!.password,
                     meters: _currentUser!.meters,
                     address: addressController.text.trim(),
+
+                    avatarPath: _currentUser!.avatarPath,
                   );
 
                   await authRepository.updateUser(updatedUser);
