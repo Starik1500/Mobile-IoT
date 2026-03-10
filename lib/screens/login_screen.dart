@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../data/hive_auth_repository.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -10,11 +11,42 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+
+  bool _isLoading = false;
 
   @override
   void dispose() {
     _emailController.dispose();
+    _passwordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _login() async {
+    if (_formKey.currentState!.validate()) {
+      setState(() => _isLoading = true);
+
+      try {
+        await authRepository.login(
+          _emailController.text.trim(),
+          _passwordController.text,
+        );
+
+        if (!mounted) return;
+        Navigator.pushReplacementNamed(context, '/main');
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceAll('Exception: ', '')),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
+      }
+    }
   }
 
   @override
@@ -40,27 +72,18 @@ class _LoginScreenState extends State<LoginScreen> {
                     controller: _emailController,
                     decoration: const InputDecoration(labelText: 'Email', border: OutlineInputBorder()),
                     validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Будь ласка, введіть email';
-                      }
-                      final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-                      if (!emailRegex.hasMatch(value)) {
-                        return 'Введіть коректний email (наприклад: test@lpnu.ua)';
-                      }
+                      if (value == null || value.isEmpty) return 'Будь ласка, введіть email';
+                      if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) return 'Некоректний формат email';
                       return null;
                     },
                   ),
                   const SizedBox(height: 16),
 
                   TextFormField(
+                    controller: _passwordController,
                     obscureText: true,
                     decoration: const InputDecoration(labelText: 'Пароль', border: OutlineInputBorder()),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Будь ласка, введіть пароль';
-                      }
-                      return null;
-                    },
+                    validator: (value) => value == null || value.isEmpty ? 'Будь ласка, введіть пароль' : null,
                   ),
                   const SizedBox(height: 32),
 
@@ -70,19 +93,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.teal, foregroundColor: Colors.white, shape: const RoundedRectangleBorder(),
                       ),
-                      onPressed: () {
-                        if (_formKey.currentState!.validate()) {
-                          Navigator.pushReplacementNamed(
-                            context, '/main',
-                            arguments: {
-                              'name': 'Студент',
-                              'email': _emailController.text,
-                              'meters': ['electricity', 'gas'],
-                            },
-                          );
-                        }
-                      },
-                      child: const Text('УВІЙТИ', style: TextStyle(fontSize: 16)),
+                      onPressed: _isLoading ? null : _login,
+                      child: _isLoading
+                          ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                          : const Text('УВІЙТИ', style: TextStyle(fontSize: 16)),
                     ),
                   ),
                   const SizedBox(height: 16),

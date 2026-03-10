@@ -1,16 +1,113 @@
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
 import 'package:flutter/material.dart';
+import '../data/hive_auth_repository.dart';
+import '../domain/auth_interface.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  User? _currentUser;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    final user = await authRepository.getCurrentUser();
+    setState(() {
+      _currentUser = user;
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _pickAvatar() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+
+    if (pickedFile != null && _currentUser != null) {
+      final updatedUser = User(
+        name: _currentUser!.name,
+        email: _currentUser!.email,
+        address: _currentUser!.address,
+        password: _currentUser!.password,
+        meters: _currentUser!.meters,
+        avatarPath: pickedFile.path,
+      );
+
+      await authRepository.updateUser(updatedUser);
+      _loadUserData();
+    }
+  }
+
+  Future<void> _logout() async {
+    await authRepository.logout();
+    if (!mounted) return;
+    Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+  }
+
+  void _showEditAddressDialog() {
+    final TextEditingController addressController = TextEditingController(text: _currentUser?.address);
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: const RoundedRectangleBorder(),
+          title: const Text('Редагувати адресу'),
+          content: TextField(
+            controller: addressController,
+            decoration: const InputDecoration(
+              labelText: 'Нова адреса',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('СКАСУВАТИ', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, foregroundColor: Colors.white),
+              onPressed: () async {
+                if (addressController.text.isNotEmpty && _currentUser != null) {
+                  final updatedUser = User(
+                    name: _currentUser!.name,
+                    email: _currentUser!.email,
+                    password: _currentUser!.password,
+                    meters: _currentUser!.meters,
+                    address: addressController.text.trim(),
+
+                    avatarPath: _currentUser!.avatarPath,
+                  );
+
+                  await authRepository.updateUser(updatedUser);
+
+                  _loadUserData();
+
+                  if (!context.mounted) return;
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text('ЗБЕРЕГТИ'),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-
-    final args = ModalRoute.of(context)?.settings.arguments as Map?;
-    final userName = args?['name']?.toString() ?? 'Невідомий користувач';
-    final userEmail = args?['email']?.toString() ?? 'Немає пошти';
-    final userAddress = args?['address']?.toString() ?? 'Адресу не вказано';
 
     return Scaffold(
       appBar: AppBar(
@@ -19,25 +116,40 @@ class ProfileScreen extends StatelessWidget {
         foregroundColor: Colors.white,
         elevation: 0,
       ),
-      body: SingleChildScrollView(
+      body: _isLoading || _currentUser == null
+          ? const Center(child: CircularProgressIndicator(color: Colors.teal))
+          : SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Container(
-              width: 120, height: 120,
-              decoration: BoxDecoration(
-                color: Colors.teal.shade50,
-                border: Border.all(color: Colors.teal, width: 2),
-                borderRadius: BorderRadius.zero,
+            GestureDetector(
+              onTap: _pickAvatar,
+              child: Container(
+                width: 120, height: 120,
+                decoration: BoxDecoration(
+                  color: Colors.teal.shade50,
+                  border: Border.all(color: Colors.teal, width: 2),
+                  borderRadius: BorderRadius.zero,
+                  image: _currentUser!.avatarPath != null
+                      ? DecorationImage(
+                    image: FileImage(File(_currentUser!.avatarPath!)),
+                    fit: BoxFit.cover,
+                  )
+                      : null,
+                ),
+                child: _currentUser!.avatarPath == null
+                    ? const Icon(Icons.person, size: 80, color: Colors.teal)
+                    : null,
               ),
-              child: const Icon(Icons.person, size: 80, color: Colors.teal),
             ),
+            const SizedBox(height: 8),
+            const Text('Натисніть на фото, щоб змінити', style: TextStyle(fontSize: 12, color: Colors.grey)),
             const SizedBox(height: 24),
 
-            Text(userName, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+            Text(_currentUser!.name, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            Text(userEmail, style: const TextStyle(fontSize: 16, color: Colors.grey)),
+            Text(_currentUser!.email, style: const TextStyle(fontSize: 16, color: Colors.grey)),
             const SizedBox(height: 32),
 
             Container(
@@ -50,9 +162,18 @@ class ProfileScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Адреса надання послуг:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.teal)),
-                  const SizedBox(height: 12),
-                  Text(userAddress, style: const TextStyle(fontSize: 16)),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Адреса надання послуг:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.teal)),
+                      IconButton(
+                        icon: const Icon(Icons.edit, size: 20, color: Colors.teal),
+                        onPressed: _showEditAddressDialog,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(_currentUser!.address, style: const TextStyle(fontSize: 16)),
                 ],
               ),
             ),
@@ -62,11 +183,11 @@ class ProfileScreen extends StatelessWidget {
               width: size.width, height: 50,
               child: OutlinedButton(
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.red, side: const BorderSide(color: Colors.red, width: 2), shape: const RoundedRectangleBorder(),
+                  foregroundColor: Colors.red,
+                  side: const BorderSide(color: Colors.red, width: 2),
+                  shape: const RoundedRectangleBorder(),
                 ),
-                onPressed: () {
-                  Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
-                },
+                onPressed: _logout,
                 child: const Text('ВИЙТИ З АКАУНТУ', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ),
             ),

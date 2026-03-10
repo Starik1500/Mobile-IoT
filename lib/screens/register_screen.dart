@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../data/hive_auth_repository.dart';
+import '../domain/auth_interface.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -12,13 +14,47 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+
+  bool _isLoading = false;
 
   @override
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
     _addressController.dispose();
+    _passwordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _register() async {
+    if (_formKey.currentState!.validate()) {
+      setState(() => _isLoading = true);
+
+      final newUser = User(
+        name: _nameController.text.trim(),
+        email: _emailController.text.trim(),
+        address: _addressController.text.trim(),
+        password: _passwordController.text,
+        meters: [],
+      );
+
+      try {
+        await authRepository.register(newUser);
+
+        await authRepository.login(newUser.email, newUser.password);
+
+        if (!mounted) return;
+        Navigator.pushNamedAndRemoveUntil(context, '/main', (route) => false);
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString().replaceAll('Exception: ', '')), backgroundColor: Colors.red),
+        );
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
+      }
+    }
   }
 
   @override
@@ -44,7 +80,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   TextFormField(
                     controller: _nameController,
                     decoration: const InputDecoration(labelText: 'Ім\'я користувача', border: OutlineInputBorder()),
-                    validator: (value) => value == null || value.isEmpty ? 'Введіть своє ім\'я' : null,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) return 'Введіть своє ім\'я';
+                      if (RegExp(r'[0-9]').hasMatch(value)) return 'Ім\'я не може містити цифри!';
+                      return null;
+                    },
                   ),
                   const SizedBox(height: 16),
 
@@ -67,6 +107,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   const SizedBox(height: 16),
 
                   TextFormField(
+                    controller: _passwordController,
                     obscureText: true,
                     decoration: const InputDecoration(labelText: 'Пароль', border: OutlineInputBorder()),
                     validator: (value) {
@@ -83,20 +124,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.teal, foregroundColor: Colors.white, shape: const RoundedRectangleBorder(),
                       ),
-                      onPressed: () {
-                        if (_formKey.currentState!.validate()) {
-                          Navigator.pushNamedAndRemoveUntil(
-                            context, '/main', (route) => false,
-                            arguments: {
-                              'name': _nameController.text,
-                              'email': _emailController.text,
-                              'address': _addressController.text,
-                              'meters': [],
-                            },
-                          );
-                        }
-                      },
-                      child: const Text('ЗАРЕЄСТРУВАТИСЯ', style: TextStyle(fontSize: 16)),
+                      onPressed: _isLoading ? null : _register,
+                      child: _isLoading
+                          ? const CircularProgressIndicator(color: Colors.white)
+                          : const Text('ЗАРЕЄСТРУВАТИСЯ', style: TextStyle(fontSize: 16)),
                     ),
                   ),
                 ],
