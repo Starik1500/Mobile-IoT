@@ -23,6 +23,9 @@ jobs:
       - name: Flutter Pub Get
         run: flutter pub get
 
+      - name: Create dummy .env file
+        run: touch .env
+
       - name: Run Dart Analysis
         uses: invertase/github-action-dart-analyzer@main
         with:
