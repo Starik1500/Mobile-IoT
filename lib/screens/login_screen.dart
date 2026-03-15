@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/connectivity_provider.dart';
 import '../data/hive_auth_repository.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -25,6 +27,16 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _login() async {
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
+
+      final hasInternet = await context.read<ConnectivityProvider>().checkConnectionNow();
+      if (!hasInternet) {
+        setState(() => _isLoading = false);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Немає підключення до Інтернету!'), backgroundColor: Colors.orange),
+        );
+        return;
+      }
 
       try {
         await authRepository.login(

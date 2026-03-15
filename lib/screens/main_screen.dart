@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/connectivity_provider.dart';
 import '../data/hive_auth_repository.dart';
 import '../domain/auth_interface.dart';
-import '../widgets/meter_card.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -14,10 +15,30 @@ class _MainScreenState extends State<MainScreen> {
   User? _currentUser;
   bool _isLoading = true;
 
-  final Map<String, MeterCard> _allMeters = {
-    'electricity': const MeterCard(title: 'Електроенергія', icon: Icons.bolt, value: '0 кВт⋅год', color: Colors.amber),
-    'gas': const MeterCard(title: 'Газопостачання', icon: Icons.local_fire_department, value: '0 м³', color: Colors.deepOrange),
-    'water': const MeterCard(title: 'Водопостачання', icon: Icons.water_drop, value: '0 м³', color: Colors.blue),
+  final Map<String, String> _lastReadings = {};
+
+  final Map<String, Map<String, dynamic>> _meterDetails = {
+    'electricity': {
+      'title': 'Електроенергія (Дім)',
+      'address': 'м. Львів, НУ ЛП, Гуртожиток',
+      'icon': Icons.bolt,
+      'color': Colors.amber.shade700,
+      'unit': 'кВт⋅год',
+    },
+    'gas': {
+      'title': 'Газопостачання',
+      'address': 'Тернопільська обл.',
+      'icon': Icons.local_fire_department,
+      'color': Colors.deepOrange,
+      'unit': 'м³',
+    },
+    'water': {
+      'title': 'Водопостачання (Холодна)',
+      'address': 'м. Львів, НУ ЛП, Гуртожиток',
+      'icon': Icons.water_drop,
+      'color': Colors.blue,
+      'unit': 'м³',
+    },
   };
 
   @override
@@ -28,63 +49,123 @@ class _MainScreenState extends State<MainScreen> {
 
   Future<void> _loadUserData() async {
     final user = await authRepository.getCurrentUser();
+    if (user != null) {
+      for (String meter in user.meters) {
+        final history = await authRepository.getMeterHistory(user.email, meter);
+        if (history.isNotEmpty) {
+          _lastReadings[meter] = '${history.first['value']} ${_meterDetails[meter]!['unit']}';
+        } else {
+          _lastReadings[meter] = 'Немає даних';
+        }
+      }
+    }
+
+    if (!mounted) return;
     setState(() {
       _currentUser = user;
       _isLoading = false;
     });
   }
 
-  Future<void> _updateUserMeters(List<String> newMeters) async {
-    if (_currentUser != null) {
-      final updatedUser = User(
-        name: _currentUser!.name,
-        email: _currentUser!.email,
-        address: _currentUser!.address,
-        password: _currentUser!.password,
-        meters: newMeters,
+  Future<void> _updateUserMeters(User user, List<String> newMeters) async {
+    final updatedUser = User(
+      name: user.name,
+      email: user.email,
+      address: user.address,
+      password: user.password,
+      meters: newMeters,
+      avatarPath: user.avatarPath,
+    );
 
-        avatarPath: _currentUser!.avatarPath,
+    setState(() {
+      _currentUser = updatedUser;
+    });
+
+    await authRepository.updateUser(updatedUser);
+    _loadUserData();
+  }
+
+  Future<void> _simulateImport(BuildContext sheetContext, User user, String key, String providerName) async {
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+
+    Navigator.of(sheetContext).pop();
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        content: Row(
+          children: [
+            const CircularProgressIndicator(color: Colors.teal),
+            const SizedBox(width: 20),
+            Text('Зв\'язок з $providerName...'),
+          ],
+        ),
+      ),
+    );
+
+    await Future.delayed(const Duration(seconds: 2));
+
+    navigator.pop();
+
+    if (!user.meters.contains(key)) {
+      final newMeters = List<String>.from(user.meters)..add(key);
+      await _updateUserMeters(user, newMeters);
+
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Об\'єкт успішно синхронізовано!'), backgroundColor: Colors.green),
       );
-
-      await authRepository.updateUser(updatedUser);
-      setState(() {
-        _currentUser = updatedUser;
-      });
     }
   }
 
-  void _showAddMeterModal() {
-    if (_currentUser == null) return;
-
+  void _showAddMeterModal(User user) {
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(),
-      builder: (BuildContext context) {
-        return Container(
-          padding: const EdgeInsets.all(16),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (BuildContext sheetContext) {
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 20, top: 16, left: 16, right: 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Оберіть лічильник', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 16),
+              const Text('Додати пристрій обліку', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              const Text('Оберіть спосіб синхронізації', style: TextStyle(color: Colors.grey)),
+              const Divider(height: 32),
 
-              ..._allMeters.keys.where((key) => !_currentUser!.meters.contains(key)).map((key) {
-                return ListTile(
-                  leading: Icon(_allMeters[key]!.icon, color: _allMeters[key]!.color),
-                  title: Text(_allMeters[key]!.title),
-                  onTap: () {
-                    final newMeters = List<String>.from(_currentUser!.meters)..add(key);
-                    _updateUserMeters(newMeters);
-                    Navigator.pop(context);
-                  },
-                );
-              }),
+              if (!user.meters.contains('electricity'))
+                ListTile(
+                  leading: const CircleAvatar(backgroundColor: Colors.amber, child: Icon(Icons.cloud_sync, color: Colors.white)),
+                  title: const Text('Імпорт з Обленерго'),
+                  subtitle: const Text('Синхронізація за О/Р'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _simulateImport(sheetContext, user, 'electricity', 'Обленерго'),
+                ),
+              if (!user.meters.contains('gas'))
+                ListTile(
+                  leading: const CircleAvatar(backgroundColor: Colors.deepOrange, child: Icon(Icons.cloud_sync, color: Colors.white)),
+                  title: const Text('Імпорт з Нафтогазу'),
+                  subtitle: const Text('Синхронізувати газові точки'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _simulateImport(sheetContext, user, 'gas', 'Нафтогаз'),
+                ),
+              if (!user.meters.contains('water'))
+                ListTile(
+                  leading: const CircleAvatar(backgroundColor: Colors.blue, child: Icon(Icons.cloud_sync, color: Colors.white)),
+                  title: const Text('Імпорт з Водоканалу'),
+                  subtitle: const Text('Підтягнути лічильники води'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _simulateImport(sheetContext, user, 'water', 'Водоканал'),
+                ),
 
-              if (_allMeters.keys.where((key) => !_currentUser!.meters.contains(key)).isEmpty)
+              if (user.meters.length == 3)
                 const Padding(
                   padding: EdgeInsets.all(16.0),
-                  child: Text('Усі можливі лічильники вже додано!'),
-                )
+                  child: Center(child: Text('Усі можливі об\'єкти вже підключено!', style: TextStyle(color: Colors.grey))),
+                ),
             ],
           ),
         );
@@ -92,19 +173,112 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  Widget _buildRichMeterCard(String key, Map<String, dynamic> data) {
+    final reading = _lastReadings[key] ?? 'Немає даних';
+
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: data['color'].withValues(alpha: 0.1), shape: BoxShape.circle),
+                  child: Icon(data['icon'], color: data['color'], size: 28),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(data['title'], style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(Icons.location_on, size: 14, color: Colors.grey),
+                          const SizedBox(width: 4),
+                          Expanded(child: Text(data['address'], style: const TextStyle(fontSize: 13, color: Colors.grey))),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Divider(height: 1),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Останній показник (з бази)', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    const SizedBox(height: 4),
+                    Text(reading, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
+                  ],
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(color: Colors.green.shade50, borderRadius: BorderRadius.circular(20)),
+                  child: const Text('Синхронізовано', style: TextStyle(color: Colors.green, fontSize: 12, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            )
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(User user) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.domain_disabled, size: 80, color: Colors.grey.shade400),
+          const SizedBox(height: 16),
+          const Text('Немає підключених об\'єктів', style: TextStyle(fontSize: 18, color: Colors.grey)),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: () => _showAddMeterModal(user),
+            icon: const Icon(Icons.cloud_sync),
+            label: const Text('ІМПОРТУВАТИ ДАНІ'),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, foregroundColor: Colors.white),
+          )
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final hasInternet = context.watch<ConnectivityProvider>().hasInternet;
+    final user = _currentUser;
+
+    if (_isLoading || user == null) {
+      return Scaffold(
+        backgroundColor: Colors.grey.shade100,
+        appBar: AppBar(title: const Text('Об\'єкти обліку'), backgroundColor: Colors.teal),
+        body: const Center(child: CircularProgressIndicator(color: Colors.teal)),
+      );
+    }
+
     return Scaffold(
+      backgroundColor: Colors.grey.shade100,
       appBar: AppBar(
-        title: const Text('Мої Лічильники'),
+        title: const Text('Об\'єкти обліку'),
         backgroundColor: Colors.teal,
         foregroundColor: Colors.white,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.add_circle_outline),
-            tooltip: 'Додати лічильник',
-            onPressed: _showAddMeterModal,
-          ),
           IconButton(
             icon: const Icon(Icons.person),
             onPressed: () async {
@@ -114,64 +288,87 @@ class _MainScreenState extends State<MainScreen> {
           )
         ],
       ),
-      body: _isLoading || _currentUser == null
-          ? const Center(child: CircularProgressIndicator(color: Colors.teal))
-          : Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: _currentUser!.meters.isEmpty
-            ? Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.inbox, size: 80, color: Colors.grey.shade400),
-              const SizedBox(height: 16),
-              const Text('У вас ще немає лічильників', style: TextStyle(fontSize: 18, color: Colors.grey)),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                onPressed: _showAddMeterModal,
-                icon: const Icon(Icons.add),
-                label: const Text('Додати лічильник'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.teal, foregroundColor: Colors.white, shape: const RoundedRectangleBorder(),
-                ),
-              )
-            ],
-          ),
-        )
-            : ListView.builder(
-          itemCount: _currentUser!.meters.length,
-          itemBuilder: (context, index) {
-            final meterKey = _currentUser!.meters[index];
-            final meterCard = _allMeters[meterKey]!;
+      body: Column(
+        children: [
+          if (!hasInternet)
+            Container(
+              width: double.infinity,
+              color: Colors.red,
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: const Text('Немає підключення до Інтернету!', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: user.meters.isEmpty
+                  ? _buildEmptyState(user)
+                  : ListView.builder(
+                itemCount: user.meters.length,
+                itemBuilder: (context, index) {
+                  final meterKey = user.meters[index];
+                  final meterData = _meterDetails[meterKey]!;
 
-            return Dismissible(
-              key: Key(meterKey),
-              direction: DismissDirection.endToStart,
-              background: Container(
-                alignment: Alignment.centerRight,
-                padding: const EdgeInsets.only(right: 20.0),
-                color: Colors.red,
-                child: const Icon(Icons.delete, color: Colors.white),
+                  return Dismissible(
+                    key: Key(meterKey),
+                    direction: DismissDirection.horizontal,
+                    background: Container(
+                      alignment: Alignment.centerLeft,
+                      padding: const EdgeInsets.only(left: 20.0),
+                      color: Colors.red,
+                      child: const Row(
+                        children: [
+                          Icon(Icons.delete, color: Colors.white),
+                          SizedBox(width: 8),
+                          Text('Видалити', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                    secondaryBackground: Container(
+                      alignment: Alignment.centerRight,
+                      padding: const EdgeInsets.only(right: 20.0),
+                      color: Colors.blue,
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Text('Деталі', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                          SizedBox(width: 8),
+                          Icon(Icons.settings, color: Colors.white),
+                        ],
+                      ),
+                    ),
+                    confirmDismiss: (direction) async {
+                      if (direction == DismissDirection.startToEnd) {
+                        return true;
+                      } else if (direction == DismissDirection.endToStart) {
+                        await Navigator.pushNamed(context, '/sensor', arguments: meterKey);
+                        _loadUserData();
+                        return false;
+                      }
+                      return false;
+                    },
+                    onDismissed: (direction) {
+                      final newMeters = List<String>.from(user.meters)..removeAt(index);
+                      _updateUserMeters(user, newMeters);
+                    },
+                    child: InkWell(
+                      onTap: () async {
+                        await Navigator.pushNamed(context, '/sensor', arguments: meterKey);
+                        _loadUserData();
+                      },
+                      child: _buildRichMeterCard(meterKey, meterData),
+                    ),
+                  );
+                },
               ),
-              onDismissed: (direction) {
-                final newMeters = List<String>.from(_currentUser!.meters)..removeAt(index);
-                _updateUserMeters(newMeters);
-
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('${meterCard.title} видалено')),
-                );
-              },
-              child: meterCard,
-            );
-          },
-        ),
+            ),
+          ),
+        ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Камера недоступна')));
-        },
-        backgroundColor: Colors.teal, foregroundColor: Colors.white, shape: const RoundedRectangleBorder(),
-        icon: const Icon(Icons.camera_alt), label: const Text('СКАНУВАТИ'),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showAddMeterModal(user),
+        backgroundColor: Colors.teal,
+        foregroundColor: Colors.white,
+        child: const Icon(Icons.add),
       ),
     );
   }

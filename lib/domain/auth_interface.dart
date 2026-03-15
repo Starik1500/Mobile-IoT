@@ -44,4 +44,7 @@ abstract class IAuthRepository {
   Future<void> updateUser(User user);
   Future<void> logout();
   Future<User?> getCurrentUser();
+
+  Future<void> addMeterHistory(String email, String meterType, Map<String, String> record);
+  Future<List<Map<String, String>>> getMeterHistory(String email, String meterType);
 }

@@ -4,11 +4,13 @@ import '../domain/auth_interface.dart';
 class HiveAuthRepository implements IAuthRepository {
   static const String _usersBoxName = 'usersBox';
   static const String _sessionBoxName = 'sessionBox';
+  static const String _historyBoxName = 'historyBox';
 
   Future<void> init() async {
     await Hive.initFlutter();
     await Hive.openBox(_usersBoxName);
     await Hive.openBox(_sessionBoxName);
+    await Hive.openBox(_historyBoxName);
   }
 
   @override
@@ -69,6 +71,28 @@ class HiveAuthRepository implements IAuthRepository {
     }
     return null;
   }
+
+  @override
+  Future<void> addMeterHistory(String email, String meterType, Map<String, String> record) async {
+    final box = Hive.box(_historyBoxName);
+    final key = '${email}_$meterType';
+
+    List<dynamic> currentHistory = box.get(key, defaultValue: []);
+
+    currentHistory.insert(0, record);
+
+    await box.put(key, currentHistory);
+  }
+
+  @override
+  Future<List<Map<String, String>>> getMeterHistory(String email, String meterType) async {
+    final box = Hive.box(_historyBoxName);
+    final key = '${email}_$meterType';
+
+    final data = box.get(key, defaultValue: []);
+    return data.map<Map<String, String>>((item) => Map<String, String>.from(item)).toList();
+  }
+
 }
 
 final authRepository = HiveAuthRepository();

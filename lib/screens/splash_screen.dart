@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../data/hive_auth_repository.dart';
+import '../providers/connectivity_provider.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -20,19 +22,29 @@ class _SplashScreenState extends State<SplashScreen> {
 
     try {
       final user = await authRepository.getCurrentUser();
-
       if (!mounted) return;
 
       if (user != null) {
+        final hasInternet = await context.read<ConnectivityProvider>().checkConnectionNow();
+
+        if (!mounted) return;
+
+        if (!hasInternet) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Вхід офлайн. Можливість оновлення даних обмежена.'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
         Navigator.pushReplacementNamed(context, '/main');
       } else {
         Navigator.pushReplacementNamed(context, '/login');
       }
     } catch (e) {
       debugPrint('Помилка автологіну: $e');
-      if (mounted) {
-        Navigator.pushReplacementNamed(context, '/login');
-      }
+      if (mounted) Navigator.pushReplacementNamed(context, '/login');
     }
   }
 
