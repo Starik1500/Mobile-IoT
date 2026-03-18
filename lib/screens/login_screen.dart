@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../providers/connectivity_provider.dart';
 import '../data/hive_auth_repository.dart';
+import '../data/api_repository.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -25,39 +24,31 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _login() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() => _isLoading = true);
+    if (!_formKey.currentState!.validate()) return;
 
-      final hasInternet = await context.read<ConnectivityProvider>().checkConnectionNow();
-      if (!hasInternet) {
-        setState(() => _isLoading = false);
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Немає підключення до Інтернету!'), backgroundColor: Colors.orange),
-        );
-        return;
-      }
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
 
-      try {
-        await authRepository.login(
-          _emailController.text.trim(),
-          _passwordController.text,
-        );
+    setState(() => _isLoading = true);
 
-        if (!mounted) return;
-        Navigator.pushReplacementNamed(context, '/main');
-      } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString().replaceAll('Exception: ', '')),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      } finally {
-        if (mounted) setState(() => _isLoading = false);
-      }
+    final user = await apiRepository.syncUserData(email);
+
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    if (user != null && user.password == password) {
+      await authRepository.saveSession(email);
+
+      if (!mounted) return;
+      Navigator.pushReplacementNamed(context, '/main');
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Невірний email або пароль!'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
