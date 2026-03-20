@@ -68,7 +68,8 @@ class ApiRepository {
         'avatarPath': user.avatarPath, 'meters': user.meters,
       });
     } catch (e) {
-      debugPrint('Офлайн: профіль оновиться тільки локально');
+      debugPrint('Сервер недоступний, оновлення профілю йде в чергу...');
+      throw Exception('Офлайн');
     }
   }
 

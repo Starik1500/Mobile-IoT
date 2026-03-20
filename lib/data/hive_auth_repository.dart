@@ -1,12 +1,15 @@
+import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../domain/auth_interface.dart';
 import 'api_repository.dart';
-import 'package:flutter/material.dart';
 
 class HiveAuthRepository implements IAuthRepository {
   static const String _usersBoxName = 'usersBox';
   static const String _sessionBoxName = 'sessionBox';
   static const String _historyBoxName = 'historyBox';
+
+  bool _isSyncingReadings = false;
+  bool _isSyncingProfiles = false;
 
   Future<void> init() async {
     await Hive.initFlutter();
@@ -17,7 +20,7 @@ class HiveAuthRepository implements IAuthRepository {
 
   @override
   Future<void> register(User user) async {
-    final usersBox = Hive.box('usersbox');
+    final usersBox = Hive.box(_usersBoxName);
 
     await apiRepository.registerUser(user);
 
@@ -34,13 +37,15 @@ class HiveAuthRepository implements IAuthRepository {
 
   @override
   Future<User> login(String email, String password) async {
-    final usersBox = Hive.box('usersbox');
+    final usersBox = Hive.box(_usersBoxName);
     final userData = usersBox.get(email);
 
     if (userData != null && userData['password'] == password) {
-      final sessionBox = Hive.box('sessionBox');
+      final sessionBox = Hive.box(_sessionBoxName);
       await sessionBox.put('currentUserEmail', email);
       debugPrint('Локальну сесію встановлено для: $email');
+
+      syncUnsavedProfiles();
       syncUnsavedData();
 
       return User(
@@ -59,9 +64,6 @@ class HiveAuthRepository implements IAuthRepository {
   @override
   Future<void> updateUser(User user) async {
     final usersBox = Hive.box(_usersBoxName);
-
-    await apiRepository.updateUser(user);
-
     final userDataMap = {
       'name': user.name,
       'email': user.email,
@@ -70,6 +72,20 @@ class HiveAuthRepository implements IAuthRepository {
       'meters': user.meters,
       'avatarPath': user.avatarPath,
     };
+
+    try {
+      await apiRepository.updateUser(user);
+    } catch (e) {
+      final syncBox = await Hive.openBox<List>('unsynced_box');
+      final unsynced = List<Map>.from(syncBox.get('profiles', defaultValue: []) ?? []);
+
+      unsynced.removeWhere((e) => e['email'] == user.email);
+      unsynced.add(userDataMap);
+
+      await syncBox.put('profiles', unsynced);
+      debugPrint('Офлайн: оновлення профілю відкладено в чергу.');
+    }
+
     await usersBox.put(user.email, userDataMap);
   }
 
@@ -78,6 +94,7 @@ class HiveAuthRepository implements IAuthRepository {
     final sessionBox = Hive.box(_sessionBoxName);
     await sessionBox.clear();
   }
+
   Future<void> saveSession(String email, {String? token}) async {
     final sessionBox = Hive.box(_sessionBoxName);
     await sessionBox.put('currentUserEmail', email);
@@ -95,7 +112,9 @@ class HiveAuthRepository implements IAuthRepository {
       final usersBox = Hive.box(_usersBoxName);
       final userData = usersBox.get(currentUserEmail);
       if (userData != null) {
-        return User.fromMap(userData);
+        syncUnsavedProfiles();
+        syncUnsavedData();
+        return User.fromMap(Map<String, dynamic>.from(userData));
       }
     }
     return null;
@@ -111,7 +130,6 @@ class HiveAuthRepository implements IAuthRepository {
       await apiRepository.saveReading(email, meterKey, record);
     } catch (e) {
       final syncBox = await Hive.openBox<List>('unsynced_box');
-
       final unsynced = List<Map>.from(syncBox.get('readings', defaultValue: []) ?? []);
       unsynced.add({'email': email, 'meterKey': meterKey, 'record': record});
       await syncBox.put('readings', unsynced);
@@ -123,30 +141,68 @@ class HiveAuthRepository implements IAuthRepository {
     await historyBox.put(meterKey, history);
   }
 
-  Future<void> syncUnsavedData() async {
-    final syncBox = await Hive.openBox<List>('unsynced_box');
-    final unsynced = List<Map>.from(syncBox.get('readings', defaultValue: []) ?? []);
+  Future<void> syncUnsavedProfiles() async {
+    if (_isSyncingProfiles) return;
+    _isSyncingProfiles = true;
 
-    if (unsynced.isEmpty) return;
+    try {
+      final syncBox = await Hive.openBox<List>('unsynced_box');
 
-    debugPrint('Знайдено ${unsynced.length} несинхронізованих показників. Спроба відправки...');
+      while (true) {
+        final unsynced = List<Map>.from(syncBox.get('profiles', defaultValue: []) ?? []);
+        if (unsynced.isEmpty) break;
 
-    List<Map> remainUnsynced = [];
-    for (var item in unsynced) {
-      try {
-        await apiRepository.saveReading(
-            item['email'].toString(),
-            item['meterKey'].toString(),
-            Map<String, dynamic>.from(item['record'])
-        );
-      } catch (e) {
-        remainUnsynced.add(item);
+        final item = unsynced.first;
+
+        try {
+          final userToSync = User(
+            name: item['name'], email: item['email'], address: item['address'],
+            password: item['password'], meters: List<String>.from(item['meters'] ?? []), avatarPath: item['avatarPath'],
+          );
+          await apiRepository.updateUser(userToSync);
+
+          final latestUnsynced = List<Map>.from(syncBox.get('profiles', defaultValue: []) ?? []);
+          latestUnsynced.removeWhere((e) => e['email'] == item['email']);
+          await syncBox.put('profiles', latestUnsynced);
+        } catch (e) {
+          break;
+        }
       }
+    } finally {
+      _isSyncingProfiles = false;
     }
+  }
 
-    await syncBox.put('readings', remainUnsynced);
-    if (remainUnsynced.isEmpty) {
-      debugPrint('Всі відкладені показники успішно відправлено на сервер!');
+  Future<void> syncUnsavedData() async {
+    if (_isSyncingReadings) return;
+    _isSyncingReadings = true;
+
+    try {
+      final syncBox = await Hive.openBox<List>('unsynced_box');
+
+      while (true) {
+        final unsynced = List<Map>.from(syncBox.get('readings', defaultValue: []) ?? []);
+        if (unsynced.isEmpty) break;
+
+        final item = unsynced.first;
+
+        try {
+          await apiRepository.saveReading(
+              item['email'].toString(),
+              item['meterKey'].toString(),
+              Map<String, dynamic>.from(item['record'])
+          );
+
+          final latestUnsynced = List<Map>.from(syncBox.get('readings', defaultValue: []) ?? []);
+          latestUnsynced.removeWhere((e) => e.toString() == item.toString());
+          await syncBox.put('readings', latestUnsynced);
+
+        } catch (e) {
+          break;
+        }
+      }
+    } finally {
+      _isSyncingReadings = false;
     }
   }
 
@@ -156,7 +212,6 @@ class HiveAuthRepository implements IAuthRepository {
 
     final boxName = 'history_$email';
     final historyBox = await Hive.openBox<List>(boxName);
-
     final serverData = await apiRepository.getReadings(email, meterKey);
 
     if (serverData.isNotEmpty) {
@@ -171,7 +226,6 @@ class HiveAuthRepository implements IAuthRepository {
       'source': e['source'].toString(),
     }).toList();
   }
-
 }
 
 final authRepository = HiveAuthRepository();
