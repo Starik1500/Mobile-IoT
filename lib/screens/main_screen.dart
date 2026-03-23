@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../providers/connectivity_provider.dart';
+import '../cubits/auth/auth_cubit.dart';
 import '../cubits/home/home_cubit.dart';
 import '../cubits/home/home_state.dart';
 import '../widgets/meter_list_widget.dart';
@@ -25,7 +25,11 @@ class MainScreen extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.person),
             onPressed: () async {
+              await context.read<AuthCubit>().reloadUser();
+              if (!context.mounted) return;
+
               await Navigator.pushNamed(context, '/profile');
+
               if (!context.mounted) return;
               context.read<HomeCubit>().loadData();
             },

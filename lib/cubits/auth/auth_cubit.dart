@@ -1,4 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter/foundation.dart';
 import '../../domain/auth_interface.dart';
 import '../../data/hive_auth_repository.dart';
 import '../../data/api_repository.dart';
@@ -69,6 +70,17 @@ class AuthCubit extends Cubit<AuthState> {
       emit(AuthAuthenticated(user));
     } catch (e) {
       emit(AuthError('Помилка оновлення профілю'));
+    }
+  }
+
+  Future<void> reloadUser() async {
+    try {
+      final user = await authRepository.getCurrentUser();
+      if (user != null) {
+        emit(AuthAuthenticated(user));
+      }
+    } catch (e) {
+      debugPrint('Помилка оновлення юзера: $e');
     }
   }
 }
