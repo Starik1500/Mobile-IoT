@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
-import '../data/hive_auth_repository.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+
+import '../cubits/auth/auth_cubit.dart';
 import '../domain/auth_interface.dart';
 
 class ProfileDialogs {
-  static void showEditAddressDialog(BuildContext context, User user, VoidCallback onSuccess) {
+  static void showEditAddressDialog(BuildContext context, User user) {
     final TextEditingController addressController = TextEditingController(text: user.address);
 
     showDialog(
@@ -15,12 +17,12 @@ class ProfileDialogs {
           TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('СКАСУВАТИ', style: TextStyle(color: Colors.grey))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, foregroundColor: Colors.white),
-            onPressed: () async {
+            onPressed: () {
               if (addressController.text.isNotEmpty) {
                 final updatedUser = User(name: user.name, email: user.email, password: user.password, meters: user.meters, address: addressController.text.trim(), avatarPath: user.avatarPath);
-                await authRepository.updateUser(updatedUser);
-                onSuccess();
-                if (dialogContext.mounted) Navigator.pop(dialogContext);
+
+                context.read<AuthCubit>().updateUser(updatedUser);
+                Navigator.pop(dialogContext);
               }
             },
             child: const Text('ЗБЕРЕГТИ'),
@@ -30,7 +32,7 @@ class ProfileDialogs {
     );
   }
 
-  static void showEditNameDialog(BuildContext context, User user, VoidCallback onSuccess) {
+  static void showEditNameDialog(BuildContext context, User user) {
     final TextEditingController nameController = TextEditingController(text: user.name);
     final messenger = ScaffoldMessenger.of(context);
 
@@ -43,12 +45,12 @@ class ProfileDialogs {
           TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('СКАСУВАТИ', style: TextStyle(color: Colors.grey))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, foregroundColor: Colors.white),
-            onPressed: () async {
+            onPressed: () {
               if (nameController.text.isNotEmpty && !RegExp(r'[0-9]').hasMatch(nameController.text)) {
                 final updatedUser = User(name: nameController.text.trim(), email: user.email, password: user.password, meters: user.meters, address: user.address, avatarPath: user.avatarPath);
-                await authRepository.updateUser(updatedUser);
-                onSuccess();
-                if (dialogContext.mounted) Navigator.pop(dialogContext);
+
+                context.read<AuthCubit>().updateUser(updatedUser);
+                Navigator.pop(dialogContext);
               } else {
                 messenger.showSnackBar(const SnackBar(content: Text('Ім\'я не може містити цифри!')));
               }
@@ -60,7 +62,7 @@ class ProfileDialogs {
     );
   }
 
-  static void showLogoutDialog(BuildContext context, VoidCallback onLogout) {
+  static void showLogoutDialog(BuildContext context) {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -70,7 +72,10 @@ class ProfileDialogs {
           TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('СКАСУВАТИ', style: TextStyle(color: Colors.grey))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-            onPressed: () { Navigator.pop(dialogContext); onLogout(); },
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              context.read<AuthCubit>().logout();
+            },
             child: const Text('ВИЙТИ'),
           ),
         ],
