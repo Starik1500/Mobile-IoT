@@ -136,7 +136,7 @@ class HiveAuthRepository implements IAuthRepository {
       debugPrint('Відправку відкладено. Збережено в чергу синхронізації.');
     }
 
-    final stringRecord = record.map((key, value) => MapEntry(key.toString(), value.toString()));
+    final stringRecord = record.map((key, value) => MapEntry(key.toString(), value?.toString() ?? ''));
     history.insert(0, stringRecord);
     await historyBox.put(meterKey, history);
   }
@@ -220,10 +220,16 @@ class HiveAuthRepository implements IAuthRepository {
     }
 
     final localHistory = List<Map>.from(historyBox.get(meterKey, defaultValue: []) ?? []);
-    return localHistory.map((e) => {
-      'date': e['date'].toString(),
-      'value': e['value'].toString(),
-      'source': e['source'].toString(),
+    return localHistory.map((e) {
+      final map = {
+        'date': e['date'].toString(),
+        'value': e['value'].toString(),
+        'source': e['source'].toString(),
+      };
+      if (e.containsKey('image') && e['image'] != null && e['image'].toString().isNotEmpty) {
+        map['image'] = e['image'].toString();
+      }
+      return map;
     }).toList();
   }
 }

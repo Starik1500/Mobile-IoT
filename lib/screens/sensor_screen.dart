@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:my_camera_plugin/my_camera_plugin.dart';
+import 'dart:convert';
 
 import '../providers/mqtt.dart';
 import '../providers/connectivity_provider.dart';
@@ -19,6 +21,7 @@ class _SensorScreenState extends State<SensorScreen> {
   final TextEditingController _readingController = TextEditingController();
   String _meterType = 'electricity';
   bool _isInit = false;
+  MqttProvider? _mqttProvider;
 
   @override
   void initState() {
@@ -31,6 +34,8 @@ class _SensorScreenState extends State<SensorScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _mqttProvider = context.read<MqttProvider>();
+
     if (!_isInit) {
       _meterType = ModalRoute.of(context)?.settings.arguments as String? ?? 'electricity';
       context.read<SensorCubit>().loadMeterData(_meterType);
@@ -41,7 +46,8 @@ class _SensorScreenState extends State<SensorScreen> {
   @override
   void dispose() {
     _readingController.dispose();
-    context.read<MqttProvider>().disconnect();
+    final mqtt = _mqttProvider;
+    Future.microtask(() => mqtt?.disconnect());
     super.dispose();
   }
 
@@ -99,7 +105,37 @@ class _SensorScreenState extends State<SensorScreen> {
                   const SizedBox(height: 12),
                   Row(
                     children: [
-                      Expanded(child: TextField(controller: _readingController, keyboardType: TextInputType.number, decoration: InputDecoration(hintText: 'Введіть значення', border: const OutlineInputBorder(), contentPadding: const EdgeInsets.symmetric(horizontal: 12), suffixIcon: IconButton(icon: const Icon(Icons.camera_alt, color: Colors.teal), onPressed: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Камера активується...'))))))),
+                      Expanded(
+                          child: TextField(
+                              controller: _readingController,
+                              keyboardType: TextInputType.number,
+                              decoration: InputDecoration(
+                                  hintText: 'Введіть значення',
+                                  border: const OutlineInputBorder(),
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                                  suffixIcon: IconButton(
+                                    icon: const Icon(Icons.camera_alt, color: Colors.teal),
+                                    onPressed: () async {
+                                      FocusScope.of(context).unfocus();
+
+                                      final String? photoBase64 = await MyCameraPlugin.openCamera(context);
+
+                                      if (photoBase64 != null && context.mounted) {
+                                        context.read<SensorCubit>().saveReading(
+                                            _meterType,
+                                            'Очікує модерації',
+                                            'Фото (Вкладення)',
+                                            photoBase64
+                                        );
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(content: Text('Фото відправлено на модерацію!'), backgroundColor: Colors.green)
+                                        );
+                                      }
+                                    },
+                                  )
+                              )
+                          )
+                      ),
                       const SizedBox(width: 12),
                       ElevatedButton(
                         style: ElevatedButton.styleFrom(backgroundColor: headerColor, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20)),
@@ -132,9 +168,72 @@ class _SensorScreenState extends State<SensorScreen> {
                           children: state.history.map((record) => Card(
                               elevation: 0, color: Colors.grey.shade50, margin: const EdgeInsets.only(bottom: 8),
                               child: ListTile(
-                                  leading: Icon(record['source'] == 'Вручну' ? Icons.edit_note : Icons.memory, color: Colors.grey),
-                                  title: Text('${record['value']} $unit', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                                  subtitle: Text('Джерело: ${record['source']}'),
+                                  leading: Icon(
+                                      record['source'] == 'Фото (Вкладення)' ? Icons.image :
+                                      (record['source'] == 'Вручну' ? Icons.edit_note : Icons.memory),
+                                      color: Colors.grey
+                                  ),
+                                  title: Text(
+                                      record['value'] == 'Очікує модерації' ? record['value']! : '${record['value']} $unit',
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
+                                          color: record['value'] == 'Очікує модерації' ? Colors.orange : Colors.black
+                                      )
+                                  ),
+                                  subtitle: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text('Джерело: ${record['source']}'),
+                                      if (record.containsKey('image') && record['image'] != null && record['image']!.isNotEmpty)
+                                        Padding(
+                                          padding: const EdgeInsets.only(top: 8.0),
+                                          child: GestureDetector(
+                                            onTap: () {
+                                              showDialog(
+                                                context: context,
+                                                builder: (BuildContext dialogContext) {
+                                                  return Dialog(
+                                                    backgroundColor: Colors.black,
+                                                    insetPadding: EdgeInsets.zero,
+                                                    child: Stack(
+                                                      alignment: Alignment.center,
+                                                      children: [
+                                                        InteractiveViewer(
+                                                          minScale: 1.0,
+                                                          maxScale: 5.0,
+                                                          child: Image.memory(
+                                                            base64Decode(record['image']!),
+                                                            fit: BoxFit.contain,
+                                                          ),
+                                                        ),
+                                                        Positioned(
+                                                          top: 40,
+                                                          right: 16,
+                                                          child: IconButton(
+                                                            icon: const Icon(Icons.close, color: Colors.white, size: 32),
+                                                            onPressed: () => Navigator.of(dialogContext).pop(),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  );
+                                                },
+                                              );
+                                            },
+                                            child: ClipRRect(
+                                              borderRadius: BorderRadius.circular(8),
+                                              child: Image.memory(
+                                                base64Decode(record['image']!),
+                                                height: 100,
+                                                width: double.infinity,
+                                                fit: BoxFit.cover,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
                                   trailing: Text(record['date']!)
                               )
                           )).toList(),
