@@ -31,6 +31,9 @@ dependencies:
   flutter:
     sdk: flutter
 
+  my_camera_plugin:
+    path: ./my_camera_plugin
+
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
@@ -49,9 +52,6 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-
-  my_camera_plugin:
-    path: ./my_camera_plugin
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
