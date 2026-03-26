@@ -44,7 +44,7 @@ class MeterInfoCard extends StatelessWidget {
           const Divider(height: 24),
           _buildInfoRow('Номер лічильника:', serialNumber),
           _buildInfoRow('Встановлено з:', installDate),
-          _buildInfoRow('Тип лічильника:', modelName),
+          _buildInfoRow('Тип:', modelName),
           _buildInfoRow('Розрядність:', resolution),
         ],
       ),
