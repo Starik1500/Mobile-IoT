@@ -75,9 +75,14 @@ class ApiRepository {
 
   Future<void> saveReading(String email, String meter, Map<String, dynamic> record) async {
     try {
-      await _dio.post('$_baseUrl/readings', data: {
+      final data = {
         'email': email, 'meter': meter, 'date': record['date'], 'value': record['value'], 'source': record['source']
-      });
+      };
+      if (record.containsKey('image')) {
+        data['image'] = record['image'];
+      }
+
+      await _dio.post('$_baseUrl/readings', data: data);
     } catch (e) {
       throw Exception('Офлайн');
     }
@@ -87,8 +92,16 @@ class ApiRepository {
     try {
       final response = await _dio.get('$_baseUrl/readings', queryParameters: {'email': email, 'meter': meter});
       if (response.statusCode == 200) {
-        return List<Map<String, String>>.from((response.data as List).map((item) => {
-          'date': item['date'].toString(), 'value': item['value'].toString(), 'source': item['source'].toString()
+        return List<Map<String, String>>.from((response.data as List).map((item) {
+          final map = {
+            'date': item['date'].toString(),
+            'value': item['value'].toString(),
+            'source': item['source'].toString()
+          };
+          if (item['image'] != null) {
+            map['image'] = item['image'].toString();
+          }
+          return map;
         }));
       }
     } catch (e) {

@@ -24,7 +24,18 @@ class HomeCubit extends Cubit<HomeState> {
       final Map<String, String> readings = {};
       for (String meter in user.meters) {
         final history = await authRepository.getMeterHistory(user.email, meter);
-        readings[meter] = history.isNotEmpty ? history.first['value'].toString() : 'Немає даних';
+        String displayValue = 'Немає даних';
+
+        if (history.isNotEmpty) {
+          try {
+            final validRecord = history.firstWhere((r) => r['value'] != 'Очікує модерації');
+            displayValue = validRecord['value'].toString();
+          } catch (e) {
+            displayValue = '0';
+          }
+        }
+
+        readings[meter] = displayValue;
       }
 
       emit(HomeLoaded(user, readings));
